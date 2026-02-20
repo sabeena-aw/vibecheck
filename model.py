@@ -1,8 +1,5 @@
 """
-model.py — Prediction logic (separated from the Streamlit prototype)
-=====================================================================
-Follows the good practice of separating inference from the UI layer,
-as discussed in the Cloud Computing course.
+model.py — Prediction logic
 
 Loaded once by app.py at startup. Contains:
   - load_scores()         : loads pre-computed neighbourhood scores
