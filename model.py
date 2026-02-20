@@ -1,11 +1,6 @@
 """
 model.py — Prediction logic
 
-Loaded once by app.py at startup. Contains:
-  - load_scores()         : loads pre-computed neighbourhood scores
-  - rank_neighbourhoods() : cosine similarity ranking
-  - fit_label()           : human-readable score interpretation
-  - get_top_matches()     : dimension-level match/mismatch analysis
 """
 
 import pandas as pd
