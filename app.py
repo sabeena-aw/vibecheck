@@ -791,19 +791,13 @@ with tab_vibecheck:
                 </div>
                 """, unsafe_allow_html=True)
 
-            # Strengths and frictions for this listing's neighbourhood
-            if listing_analysis["strengths"] or listing_analysis["frictions"]:
-                c_str, c_fri = st.columns(2, gap="medium")
-                with c_str:
-                    if listing_analysis["strengths"]:
-                        st.markdown("<div style='font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#00A699;margin-bottom:8px;'>Works well for you</div>", unsafe_allow_html=True)
-                        for d, _ in listing_analysis["strengths"]:
-                            st.markdown(f"<div style='font-size:0.85rem;margin-bottom:5px;'>&#10003; {DIM_LABELS[d]}</div>", unsafe_allow_html=True)
-                with c_fri:
-                    if listing_analysis["frictions"]:
-                        st.markdown("<div style='font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#FC642D;margin-bottom:8px;'>Worth considering</div>", unsafe_allow_html=True)
-                        for d, _ in listing_analysis["frictions"]:
-                            st.markdown(f"<div style='font-size:0.85rem;margin-bottom:5px;'>&#9651; {DIM_LABELS[d]}</div>", unsafe_allow_html=True)
+            # Strengths only — frictions removed per design decision
+            if listing_analysis["strengths"]:
+                st.markdown("<div style='font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;color:#00A699;margin-bottom:8px;'>Works well for you</div>", unsafe_allow_html=True)
+                cols_str = st.columns(2)
+                for i, (d, _) in enumerate(listing_analysis["strengths"]):
+                    with cols_str[i % 2]:
+                        st.markdown(f"<div style='font-size:0.85rem;margin-bottom:5px;'>&#10003; {DIM_LABELS[d]}</div>", unsafe_allow_html=True)
 
             # Radar — your preferences vs El Born's profile
             st.markdown("<div style='font-size:0.88rem;font-weight:700;margin:18px 0 6px;'>Your priorities vs. El Born's profile</div>", unsafe_allow_html=True)
