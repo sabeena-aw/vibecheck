@@ -20,7 +20,19 @@ st.set_page_config(
     page_title="Vibe Check · Airbnb",
     page_icon="🏠",
     layout="wide",
+    initial_sidebar_state="collapsed",
 )
+
+# Force light mode always
+st.markdown("""
+<script>
+var observer = new MutationObserver(function() {
+    document.documentElement.setAttribute('data-theme', 'light');
+});
+observer.observe(document.documentElement, {attributes: true});
+document.documentElement.setAttribute('data-theme', 'light');
+</script>
+""", unsafe_allow_html=True)
 
 # ── CSS — Airbnb palette, font, minimal overrides ──────────────────────────────
 st.markdown("""
@@ -164,9 +176,10 @@ st.markdown("""
   .rank-name  { font-weight: 700; font-size: 0.95rem; flex: 1; }
   .rank-desc  { font-size: 0.8rem; color: #717171; margin-top: 2px; }
   .rank-score { font-weight: 800; font-size: 0.95rem; margin-left: auto; white-space: nowrap; }
-  .score-good { color: #00A699; }
-  .score-mid  { color: #FF385C; }
-  .score-low  { color: #BBBBBB; }
+  .score-good { color: #00A699; }   /* teal   — Excellent match */
+  .score-blue { color: #4A90D9; }   /* blue   — Great match     */
+  .score-mid  { color: #FC8C42; }   /* orange — Partial match   */
+  .score-low  { color: #BBBBBB; }   /* grey   — Not ideal       */
 
   /* Result score display */
   .fit-score {
@@ -268,6 +281,85 @@ NBHD_COORDS = {
     "Sants-Montjuïc": (41.3698, 2.1497),
     "Horta-Guinardó": (41.4196, 2.1623),
 }
+
+# Maps granular Inside Airbnb neighbourhood names to familiar local names
+NBHD_NAME_MAP = {
+    "Sant Pere, Santa Caterina i la Ribera": "El Born",
+    "la Barceloneta": "Barceloneta",
+    "el Barri Gòtic": "Barri Gòtic",
+    "el Raval": "El Raval",
+    "Sant Antoni": "Sant Antoni",
+    "l'Eixample": "Eixample",
+    "la Dreta de l'Eixample": "Eixample",
+    "l'Antiga Esquerra de l'Eixample": "Eixample",
+    "la Nova Esquerra de l'Eixample": "Eixample",
+    "la Sagrada Família": "Eixample",
+    "el Fort Pienc": "Eixample",
+    "la Vila de Gràcia": "Gràcia",
+    "el Camp d'en Grassot i Gràcia Nova": "Gràcia",
+    "la Salut": "Gràcia",
+    "el Camp de l'Arpa del Clot": "Clot",
+    "el Clot": "Clot",
+    "el Poblenou": "Poblenou",
+    "la Vila Olímpica del Poblenou": "Poblenou (Olympic)",
+    "el Parc i la Llacuna del Poblenou": "Poblenou",
+    "la Verneda i la Pau": "Sant Martí",
+    "Diagonal Mar i el Front Marítim del Poblenou": "Poblenou",
+    "el Besòs i el Maresme": "Poblenou",
+    "Provençals del Poblenou": "Poblenou",
+    "Sant Martí de Provençals": "Sant Martí",
+    "la Pau": "Sant Martí",
+    "les Corts": "Les Corts",
+    "la Maternitat i Sant Ramon": "Les Corts",
+    "la Bordeta": "Sants",
+    "Sants": "Sants",
+    "Sants - Badal": "Sants",
+    "la Font de la Guatlla": "Sants",
+    "hostafrancs": "Hostafrancs",
+    "Hostafrancs": "Hostafrancs",
+    "el Poble Sec": "Poble Sec",
+    "la Marina del Prat Vermell": "Zona Franca",
+    "la Marina de Port": "Zona Franca",
+    "Montjuïc": "Montjuïc",
+    "la Font d'en Fargues": "Horta",
+    "el Guinardó": "Guinardó",
+    "can Baró": "Guinardó",
+    "Can Baró": "Guinardó",
+    "la Teixonera": "Horta",
+    "Sant Genís dels Agudells": "Horta",
+    "la Vall d'Hebron": "Vall d'Hebron",
+    "la Clota": "Horta",
+    "Horta": "Horta",
+    "el Carmel": "El Carmel",
+    "la Barceloneta": "Barceloneta",
+    "les Roquetes": "Nou Barris",
+    "Verdun": "Nou Barris",
+    "la Prosperitat": "Nou Barris",
+    "la Trinitat Nova": "Nou Barris",
+    "Torre Baró": "Nou Barris",
+    "Ciutat Meridiana": "Nou Barris",
+    "Vallbona": "Nou Barris",
+    "la Trinitat Vella": "Sant Andreu",
+    "Baró de Viver": "Sant Andreu",
+    "el Bon Pastor": "Sant Andreu",
+    "Sant Andreu": "Sant Andreu",
+    "la Sagrera": "Sant Andreu",
+    "el Congrés i els Indians": "Sant Andreu",
+    "Navas": "Sant Andreu",
+    "Sarrià": "Sarrià",
+    "les Tres Torres": "Sant Gervasi",
+    "Sant Gervasi - la Bonanova": "Sant Gervasi",
+    "Sant Gervasi - Galvany": "Sant Gervasi",
+    "el Putxet i el Farró": "Sant Gervasi",
+    "Vallvidrera, el Tibidabo i les Planes": "Tibidabo",
+    "la Vall d'Hebron": "Vall d'Hebron",
+    "el Coll": "Gràcia",
+    "Pedralbes": "Pedralbes",
+}
+
+def display_name(raw_name):
+    """Return a familiar neighbourhood name for display."""
+    return NBHD_NAME_MAP.get(raw_name, raw_name)
 
 DIM_LABELS = {
     "Nightlife & Bars":    "Nightlife",
@@ -480,11 +572,14 @@ with tab_overview:
             </div>
             """, unsafe_allow_html=True)
 
+            import datetime as _dt2
+            _today    = _dt2.date.today()
+            _default_out = _today + _dt2.timedelta(days=5)
             c1, c2 = st.columns(2)
             with c1:
-                st.date_input("Check-in", key="checkin")
+                st.date_input("Check-in", value=_today, key="checkin")
             with c2:
-                st.date_input("Check-out", key="checkout")
+                st.date_input("Check-out", value=_default_out, key="checkout")
 
             st.selectbox("Guests", ["1 guest", "2 guests", "3 guests", "4 guests"])
             st.button("Reserve", use_container_width=True)
@@ -544,15 +639,23 @@ with tab_vibecheck:
     # ── Trip context ───────────────────────────────────────────────────────────
     st.markdown("<div style='font-size:0.95rem;font-weight:700;margin-bottom:14px;'>About your trip</div>", unsafe_allow_html=True)
 
-    c1, c2, c3 = st.columns(3, gap="large")
+    # Calculate nights from booking widget dates
+    import datetime as _dt
+    _checkin  = st.session_state.get("checkin")
+    _checkout = st.session_state.get("checkout")
+    if _checkin and _checkout and isinstance(_checkin, _dt.date) and isinstance(_checkout, _dt.date) and _checkout > _checkin:
+        nights = (_checkout - _checkin).days
+        st.markdown(f"<div style='font-size:0.83rem;color:#717171;margin-bottom:12px;'>📅 Dates from your booking: <strong>{nights} nights</strong> ({_checkin.strftime('%d %b')} – {_checkout.strftime('%d %b')})</div>", unsafe_allow_html=True)
+    else:
+        nights = 7
+
+    c1, c2 = st.columns(2, gap="large")
     with c1:
         trip_type = st.selectbox(
             "Travelling as",
             ["Solo", "Couple", "Friends group", "Family with children", "Business"],
         )
     with c2:
-        nights = st.number_input("Nights", min_value=1, max_value=90, value=7)
-    with c3:
         pace = st.select_slider(
             "Travel pace",
             options=["Very relaxed", "Relaxed", "Balanced", "Active", "Non-stop"],
@@ -560,10 +663,20 @@ with tab_vibecheck:
         )
 
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    run = st.button("Find my best neighbourhood match", use_container_width=True)
+
+    # Disable button after run — re-enables when preferences change
+    import hashlib as _hl
+    _pref_hash = _hl.md5(str(sorted(user_prefs.items())).encode() + str(trip_type).encode() + str(pace).encode()).hexdigest()
+    _already_run = st.session_state.get("last_pref_hash") == _pref_hash and "vibe_ranked" in st.session_state
+    run = st.button(
+        "✓ Vibe Check calculated" if _already_run else "Find my best neighbourhood match",
+        use_container_width=True,
+        disabled=_already_run,
+    )
 
     # ── Results ────────────────────────────────────────────────────────────────
     if run:
+        st.session_state.last_pref_hash  = _pref_hash
         st.session_state.vibe_user_prefs = user_prefs.copy()
         st.session_state.vibe_trip_type  = trip_type
         st.session_state.vibe_nights     = nights
@@ -662,6 +775,22 @@ with tab_vibecheck:
             </div>
             """, unsafe_allow_html=True)
 
+            # Better fit suggestion — shown when El Born scores below 75
+            if listing_score < 80:
+                top_row = ranked[ranked["neighbourhood"] != LISTING_NEIGHBOURHOOD].iloc[0]
+                top_name = display_name(top_row["neighbourhood"])
+                top_score = top_row["fit_score"]
+                st.markdown(f"""
+                <div style="background:#FFF5F7;border:1px solid #FFD0D8;border-radius:8px;
+                            padding:11px 15px;font-size:0.84rem;color:#555;margin:12px 0;line-height:1.6;">
+                  💡 Based on your preferences, <strong style="color:#FF385C;">{top_name}</strong>
+                  might be a better fit — it scores <strong>{top_score:.0f}/100</strong> for your profile.
+                  <a href="https://www.airbnb.com/s/Barcelona--Spain/homes?query={top_name}%20Barcelona"
+                     target="_blank" style="color:#FF385C;font-weight:700;text-decoration:underline;">
+                  Browse listings in {top_name} →</a>
+                </div>
+                """, unsafe_allow_html=True)
+
             # Strengths and frictions for this listing's neighbourhood
             if listing_analysis["strengths"] or listing_analysis["frictions"]:
                 c_str, c_fri = st.columns(2, gap="medium")
@@ -737,7 +866,7 @@ with tab_vibecheck:
         prefs_text     = ", ".join([f"{DIM_LABELS[d]}: {v}/5" for d, v in user_prefs.items()])
         scores_text    = ", ".join([f"{DIM_LABELS[d]}: {float(listing_row[d]):.0f}/100" for d in DIMENSIONS])
 
-        SYSTEM_PROMPT = f"""You are a warm, knowledgeable neighbourhood concierge for Airbnb, specialising in El Born (Sant Pere, Santa Caterina i la Ribera), Barcelona.
+        SYSTEM_PROMPT = f"""You are a warm, knowledgeable local friend and neighbourhood expert for El Born, Barcelona. You know the area inside out. Always refer to the neighbourhood simply as 'El Born' — never use its official administrative name.
 
 You have access to the following personalised Vibe Check data computed for this specific user:
 - Trip type: {trip_type}
@@ -750,12 +879,12 @@ You have access to the following personalised Vibe Check data computed for this 
 - El Born's actual scores derived from real Airbnb guest reviews: {scores_text}
 
 Your role:
-- Answer questions about El Born specifically — what to do, where to eat, nightlife, safety, transport, hidden gems
-- Create personalised itineraries tailored to the user's travel style, pace, trip type and number of nights
+- Answer questions about El Born — what to do, where to eat and drink, nightlife, safety, transport, hidden gems
+- Create personalised day-by-day itineraries tailored to the user's travel style, pace, trip type and number of nights
 - Always ground your answers in the user's actual Vibe Check preferences and the neighbourhood scores above
 - Be honest — if something scores low and the user cares about it, acknowledge it
-- Keep responses warm, concise and practical — like a knowledgeable local friend
-- You may mention types of places (tapas bars, rooftop terraces, markets) but avoid inventing specific names or addresses
+- You SHOULD mention specific real restaurant, bar, café and attraction names in El Born — this makes your advice genuinely useful
+- Keep responses warm, conversational and practical — like a knowledgeable local friend texting you tips
 - If asked about other neighbourhoods, briefly compare them to El Born using the Vibe Check scores
 
 Only answer questions related to Barcelona travel, this neighbourhood, or trip planning."""
@@ -764,62 +893,86 @@ Only answer questions related to Barcelona travel, this neighbourhood, or trip p
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
 
-        # Suggested quick-start questions (dynamic based on trip context)
-        if not st.session_state.chat_history:
+        USER_AV = "https://ui-avatars.com/api/?name=SA&background=222222&color=ffffff&bold=true&size=32&rounded=true"
+        BOT_AV  = "https://ui-avatars.com/api/?name=A&background=FF385C&color=ffffff&bold=true&size=32&rounded=true"
+
+        def call_concierge(question):
+            """Call Cohere and append response to chat history."""
+            import cohere, os
+            from dotenv import load_dotenv
+            load_dotenv()
+            api_key = os.getenv("COHERE_API_KEY") or st.secrets.get("COHERE_API_KEY", "")
+            co = cohere.ClientV2(api_key)
+            messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+            for m in st.session_state.chat_history:
+                messages.append({"role": m["role"], "content": m["content"]})
+            messages.append({"role": "user", "content": question})
+            try:
+                response = co.chat(model="command-r-plus-08-2024", messages=messages)
+                return response.message.content[0].text
+            except Exception as e:
+                return f"Sorry, something went wrong: {e}"
+
+        # Suggestion buttons — only before first message, hidden while loading
+        if not st.session_state.chat_history and not st.session_state.get("_loading"):
             st.markdown("<div style='font-size:0.82rem;color:#717171;margin-bottom:8px;'>Try asking:</div>", unsafe_allow_html=True)
+            suggestion_map = {
+                "Solo":                 "What are the best solo-friendly spots in El Born?",
+                "Couple":               "What's a perfect romantic evening in El Born?",
+                "Friends group":        "Best bars and nightlife for a group in El Born?",
+                "Family with children": "What's El Born like with kids?",
+                "Business":             "Good spots to work from a café in El Born?",
+            }
             suggestions = [
                 f"Plan a {nights}-night itinerary for a {trip_type.lower()} trip",
-                "What's El Born like for a girls weekend?",
-                "Best places to eat and drink in El Born?",
-                "Is it safe to walk around here at night?",
+                suggestion_map.get(trip_type, f"What's El Born like for a {trip_type.lower()} trip?"),
+                "Best restaurants and tapas bars in El Born?",
+                "What hidden gems should I not miss here?",
             ]
             s_cols = st.columns(2)
-            for idx, suggestion in enumerate(suggestions):
+            for idx, sugg in enumerate(suggestions):
                 with s_cols[idx % 2]:
-                    if st.button(suggestion, key=f"sug_{idx}", use_container_width=True):
-                        st.session_state.pending_question = suggestion
+                    if st.button(sugg, key=f"sug_{idx}", use_container_width=True):
+                        st.session_state._loading = True
+                        st.session_state._pending_sugg = sugg
                         st.rerun()
 
-        # Handle suggestion click
-        if "pending_question" in st.session_state:
-            user_input = st.session_state.pending_question
-            del st.session_state.pending_question
-        else:
-            user_input = st.chat_input("Ask your concierge...")
+        # Process pending suggestion cleanly after rerun
+        if st.session_state.get("_pending_sugg"):
+            sugg = st.session_state.pop("_pending_sugg")
+            st.session_state.pop("_loading", None)
+            with st.spinner("Finding the best answer for you..."):
+                reply = call_concierge(sugg)
+            st.session_state.chat_history.append({"role": "user", "content": sugg})
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+            st.rerun()
 
-        # Render existing chat history
+        # Render full chat history
         for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
+            with st.chat_message(msg["role"], avatar=USER_AV if msg["role"] == "user" else BOT_AV):
                 st.markdown(msg["content"])
 
-        if user_input:
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            with st.chat_message("user"):
-                st.markdown(user_input)
+        # Inline input — always below the last message
+        # Use a counter in session state to reset the text_input key after each send
+        if "concierge_counter" not in st.session_state:
+            st.session_state.concierge_counter = 0
 
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    try:
-                        import cohere
-                        from dotenv import load_dotenv
-                        import os
-                        load_dotenv()
-                        api_key = os.getenv("COHERE_API_KEY") or st.secrets.get("COHERE_API_KEY", "")
-                        co = cohere.ClientV2(api_key)
+        inp_col, btn_col = st.columns([6, 1], gap="small")
+        with inp_col:
+            typed = st.text_input("", placeholder="Ask your concierge...",
+                                  key=f"concierge_text_{st.session_state.concierge_counter}",
+                                  label_visibility="collapsed")
+        with btn_col:
+            send = st.button("Send", use_container_width=True)
 
-                        # Multi-turn: full history passed on every call
-                        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-                        for m in st.session_state.chat_history[:-1]:
-                            messages.append({"role": m["role"], "content": m["content"]})
-                        messages.append({"role": "user", "content": user_input})
-
-                        response = co.chat(model="command-r-plus", messages=messages)
-                        reply = response.message.content[0].text
-                        st.markdown(reply)
-                        st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
-                    except Exception as e:
-                        st.error(f"Error: {type(e).__name__}: {e}")
+        # Send on button click OR Enter (text_input submits on Enter automatically)
+        if (send or typed) and typed:
+            with st.spinner(""):
+                reply = call_concierge(typed)
+            st.session_state.chat_history.append({"role": "user", "content": typed})
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+            st.session_state.concierge_counter += 1  # forces new empty input key
+            st.rerun()
 
         if st.session_state.chat_history:
             if st.button("Clear conversation", key="clear_chat"):
@@ -843,15 +996,23 @@ Only answer questions related to Barcelona travel, this neighbourhood, or trip p
             unsafe_allow_html=True,
         )
 
-        for i, row in ranked.iterrows():
-            name       = row["neighbourhood"]
+        # Deduplicate by display name — keep highest score per friendly name
+        ranked_display = ranked.copy()
+        ranked_display["display_neighbourhood"] = ranked_display["neighbourhood"].apply(display_name)
+        ranked_display = ranked_display.sort_values("fit_score", ascending=False)
+        ranked_display = ranked_display.drop_duplicates(subset="display_neighbourhood", keep="first").reset_index(drop=True)
+
+        for i, row in ranked_display.iterrows():
+            name       = row["display_neighbourhood"]
+            raw_name   = row["neighbourhood"]
             score      = row["fit_score"]
             label, _   = fit_label(score)
-            is_listing = (name == LISTING_NEIGHBOURHOOD)
+            is_listing = (raw_name == LISTING_NEIGHBOURHOOD)
 
-            if score >= 88:   score_cls = "score-good"
-            elif score >= 68: score_cls = "score-mid"
-            else:             score_cls = "score-low"
+            if score >= 85:   score_cls = "score-good"    # teal — Excellent
+            elif score >= 72: score_cls = "score-blue"   # blue — Great
+            elif score >= 60: score_cls = "score-mid"    # orange — Partial
+            else:             score_cls = "score-low"    # grey — Not ideal
 
             card_cls   = "rank-row top" if is_listing else "rank-row"
             rank_cls   = "rank-num top" if is_listing else "rank-num"

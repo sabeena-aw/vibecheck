@@ -51,15 +51,22 @@ def rank_neighbourhoods(user_prefs: dict, scores_df: pd.DataFrame) -> pd.DataFra
       similarity  : raw cosine similarity (0–1)
       fit_score   : similarity scaled to 0–100
     """
-    user_vec = np.array([user_prefs[d] for d in DIMENSIONS]).reshape(1, -1)
-    nbhd_matrix = scores_df[DIMENSIONS].values
+    user_vec = np.array([user_prefs[d] for d in DIMENSIONS], dtype=float)
+    nbhd_matrix = scores_df[DIMENSIONS].values / 100.0  # normalise scores to 0-1
+    user_norm_vec = user_vec / 5.0                       # normalise prefs to 0-1
 
-    # L2-normalise both vectors before computing similarity
-    user_norm = user_vec / (np.linalg.norm(user_vec) + 1e-9)
-    nbhd_norms = np.linalg.norm(nbhd_matrix, axis=1, keepdims=True) + 1e-9
-    nbhd_norm = nbhd_matrix / nbhd_norms
+    # Weighted scoring: for each neighbourhood, compute a weighted match score.
+    # Dimensions the user rates 5 contribute 5x more than dimensions rated 1.
+    # We use cubed weights so the difference between 5 and 1 is dramatic (125x vs 1x).
+    weights = user_vec ** 3
+    weights = weights / (weights.sum() + 1e-9)
 
-    similarities = cosine_similarity(user_norm, nbhd_norm)[0]
+    # Score = how well the neighbourhood delivers on what the user actually cares about.
+    # High nbhd score on a low-priority dim = ignored.
+    # Low nbhd score on a high-priority dim = heavily penalised.
+    scores = (nbhd_matrix * weights).sum(axis=1)        # weighted average
+    penalties = ((1 - nbhd_matrix) * weights).sum(axis=1)  # penalty for missing high-prio dims
+    similarities = scores - 0.3 * penalties             # penalise mismatches
 
     result = scores_df.copy()
     result["similarity"] = similarities
@@ -70,10 +77,10 @@ def rank_neighbourhoods(user_prefs: dict, scores_df: pd.DataFrame) -> pd.DataFra
 
 def fit_label(score: float) -> tuple[str, str]:
     """Map a numeric fit score to a human-readable label and hex colour."""
-    if score >= 88: return "Excellent match", "#00A699"
-    if score >= 78: return "Great match",     "#FF385C"
-    if score >= 68: return "Good match",      "#FC642D"
-    return "Fair match", "#B0B0B0"
+    if score >= 85: return "Excellent match", "#00A699"   # teal
+    if score >= 72: return "Great match",     "#4A90D9"   # blue
+    if score >= 60: return "Partial match",   "#FC8C42"   # orange
+    return "Not ideal",   "#BBBBBB"                       # grey
 
 
 def get_match_analysis(user_prefs: dict, nbhd_row: pd.Series) -> dict:
