@@ -819,7 +819,7 @@ Only answer questions related to Barcelona travel, this neighbourhood, or trip p
                         st.session_state.chat_history.append({"role": "assistant", "content": reply})
 
                     except Exception as e:
-                        st.error("Could not connect to the concierge. Please check your API key.")
+                        st.error(f"Error: {type(e).__name__}: {e}")
 
         if st.session_state.chat_history:
             if st.button("Clear conversation", key="clear_chat"):
