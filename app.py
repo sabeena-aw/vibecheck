@@ -563,10 +563,13 @@ with tab_vibecheck:
     run = st.button("Find my best neighbourhood match", use_container_width=True)
 
     # ── Results ────────────────────────────────────────────────────────────────
-    # ── Results ────────────────────────────────────────────────────────────────
     if run:
+        st.session_state.vibe_user_prefs = user_prefs.copy()
+        st.session_state.vibe_trip_type  = trip_type
+        st.session_state.vibe_nights     = nights
+        st.session_state.vibe_pace       = pace
+        st.session_state.chat_history    = []
 
-        # This listing is in El Born (Sant Pere, Santa Caterina i la Ribera)
         LISTING_NEIGHBOURHOOD = "Sant Pere, Santa Caterina i la Ribera"
 
         bar = st.progress(0, text="Loading review data...")
@@ -579,8 +582,22 @@ with tab_vibecheck:
         time.sleep(0.25)
         bar.empty()
 
-        # Run model across all neighbourhoods
-        ranked = rank_neighbourhoods(user_prefs, scores_df)
+        # Run model and stretch scores for better spread (min-max to 58-98 range)
+        ranked_raw = rank_neighbourhoods(user_prefs, scores_df)
+        mn, mx = ranked_raw["fit_score"].min(), ranked_raw["fit_score"].max()
+        if mx - mn > 0:
+            ranked_raw["fit_score"] = ((ranked_raw["fit_score"] - mn) / (mx - mn) * 40 + 58).round(1)
+        ranked = ranked_raw
+        st.session_state.vibe_ranked = ranked
+
+    # ── Render results from session state (persists across chatbot interactions) ──
+    if "vibe_ranked" in st.session_state:
+        ranked        = st.session_state.vibe_ranked
+        user_prefs    = st.session_state.vibe_user_prefs
+        trip_type     = st.session_state.vibe_trip_type
+        nights        = st.session_state.vibe_nights
+        pace          = st.session_state.vibe_pace
+        LISTING_NEIGHBOURHOOD = "Sant Pere, Santa Caterina i la Ribera"
 
         # Pull the listing's neighbourhood row specifically
         listing_row   = ranked[ranked["neighbourhood"] == LISTING_NEIGHBOURHOOD].iloc[0]
@@ -699,6 +716,116 @@ with tab_vibecheck:
                         st.write(f"- {con}")
                 st.caption("Derived from aggregated guest review sentiment across Inside Airbnb Barcelona listings.")
 
+        # ══════════════════════════════════════════════════════════════════════
+        # NEIGHBOURHOOD CONCIERGE CHATBOT
+        # ══════════════════════════════════════════════════════════════════════
+        st.divider()
+        st.markdown("""
+        <div style='font-size:1.05rem;font-weight:800;color:#222;margin-bottom:4px;'>
+          🗺️ Ask your El Born Concierge
+        </div>
+        <div style='font-size:0.84rem;color:#717171;margin-bottom:16px;'>
+          Powered by your Vibe Check results — ask about things to do, where to eat,
+          safety, getting around, or get a personalised itinerary for your trip.
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Build context — this is what makes the chatbot non-straightforward
+        # The system prompt is dynamically constructed from the user's actual Vibe Check results
+        strengths_text = ", ".join([DIM_LABELS[d] for d, _ in listing_analysis["strengths"]]) or "none identified"
+        frictions_text = ", ".join([DIM_LABELS[d] for d, _ in listing_analysis["frictions"]]) or "none identified"
+        prefs_text     = ", ".join([f"{DIM_LABELS[d]}: {v}/5" for d, v in user_prefs.items()])
+        scores_text    = ", ".join([f"{DIM_LABELS[d]}: {float(listing_row[d]):.0f}/100" for d in DIMENSIONS])
+
+        SYSTEM_PROMPT = f"""You are a warm, knowledgeable neighbourhood concierge for Airbnb, specialising in El Born (Sant Pere, Santa Caterina i la Ribera), Barcelona.
+
+You have access to the following personalised Vibe Check data computed for this specific user:
+- Trip type: {trip_type}
+- Number of nights: {nights}
+- Travel pace: {pace}
+- User's stated preferences: {prefs_text}
+- El Born's overall fit score for this user: {listing_score:.0f}/100 ({listing_label})
+- Dimensions that work well for this user in El Born: {strengths_text}
+- Dimensions that may not fully suit this user: {frictions_text}
+- El Born's actual scores derived from real Airbnb guest reviews: {scores_text}
+
+Your role:
+- Answer questions about El Born specifically — what to do, where to eat, nightlife, safety, transport, hidden gems
+- Create personalised itineraries tailored to the user's travel style, pace, trip type and number of nights
+- Always ground your answers in the user's actual Vibe Check preferences and the neighbourhood scores above
+- Be honest — if something scores low and the user cares about it, acknowledge it
+- Keep responses warm, concise and practical — like a knowledgeable local friend
+- You may mention types of places (tapas bars, rooftop terraces, markets) but avoid inventing specific names or addresses
+- If asked about other neighbourhoods, briefly compare them to El Born using the Vibe Check scores
+
+Only answer questions related to Barcelona travel, this neighbourhood, or trip planning."""
+
+        # Initialise chat history
+        if "chat_history" not in st.session_state:
+            st.session_state.chat_history = []
+
+        # Suggested quick-start questions (dynamic based on trip context)
+        if not st.session_state.chat_history:
+            st.markdown("<div style='font-size:0.82rem;color:#717171;margin-bottom:8px;'>Try asking:</div>", unsafe_allow_html=True)
+            suggestions = [
+                f"Plan a {nights}-night itinerary for a {trip_type.lower()} trip",
+                "What's El Born like for a girls weekend?",
+                "Best places to eat and drink in El Born?",
+                "Is it safe to walk around here at night?",
+            ]
+            s_cols = st.columns(2)
+            for idx, suggestion in enumerate(suggestions):
+                with s_cols[idx % 2]:
+                    if st.button(suggestion, key=f"sug_{idx}", use_container_width=True):
+                        st.session_state.pending_question = suggestion
+                        st.rerun()
+
+        # Handle suggestion click
+        if "pending_question" in st.session_state:
+            user_input = st.session_state.pending_question
+            del st.session_state.pending_question
+        else:
+            user_input = st.chat_input("Ask your concierge...")
+
+        # Render existing chat history
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        if user_input:
+            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            with st.chat_message("user"):
+                st.markdown(user_input)
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    try:
+                        import cohere
+                        from dotenv import load_dotenv
+                        import os
+                        load_dotenv()
+                        api_key = os.getenv("COHERE_API_KEY") or st.secrets.get("COHERE_API_KEY", "")
+                        co = cohere.ClientV2(api_key)
+
+                        # Multi-turn: full history passed on every call
+                        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                        for m in st.session_state.chat_history[:-1]:
+                            messages.append({"role": m["role"], "content": m["content"]})
+                        messages.append({"role": "user", "content": user_input})
+
+                        response = co.chat(model="command-r-plus", messages=messages)
+                        reply = response.message.content[0].text
+                        st.markdown(reply)
+                        st.session_state.chat_history.append({"role": "assistant", "content": reply})
+
+                    except Exception as e:
+                        st.error("Could not connect to the concierge. Please check your API key.")
+
+        if st.session_state.chat_history:
+            if st.button("Clear conversation", key="clear_chat"):
+                st.session_state.chat_history = []
+                st.rerun()
+
         st.divider()
 
         # ══════════════════════════════════════════════════════════════════════
@@ -753,121 +880,3 @@ with tab_vibecheck:
         feedback = st.feedback("thumbs")
         if feedback is not None:
             st.success("Thanks for the feedback. We use this to improve the model.")
-
-        # ══════════════════════════════════════════════════════════════════════
-        # NEIGHBOURHOOD CONCIERGE CHATBOT
-        # ══════════════════════════════════════════════════════════════════════
-        st.divider()
-        st.markdown("""
-        <div style='font-size:1.05rem;font-weight:800;color:#222;margin-bottom:4px;'>
-          Ask about El Born
-        </div>
-        <div style='font-size:0.84rem;color:#717171;margin-bottom:20px;'>
-          Ask anything about this neighbourhood — what to do, where to eat, 
-          how it fits your trip, or get a personalised itinerary.
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Initialise chat history in session state
-        if "chat_history" not in st.session_state:
-            st.session_state.chat_history = []
-        if "cohere_history" not in st.session_state:
-            st.session_state.cohere_history = []
-
-        # Build context from Vibe Check results — this is what makes it non-straightforward
-        strengths_text = ", ".join([DIM_LABELS[d] for d, _ in listing_analysis["strengths"]]) or "none identified"
-        frictions_text = ", ".join([DIM_LABELS[d] for d, _ in listing_analysis["frictions"]]) or "none identified"
-        prefs_text = ", ".join([f"{DIM_LABELS[d]}: {v}/5" for d, v in user_prefs.items()])
-        scores_text = ", ".join([f"{DIM_LABELS[d]}: {float(listing_row[d]):.0f}/100" for d in DIMENSIONS])
-
-        SYSTEM_PROMPT = f"""You are a knowledgeable neighbourhood concierge for Airbnb, specialising in El Born (Sant Pere, Santa Caterina i la Ribera), Barcelona.
-
-You have access to the following personalised Vibe Check data for this specific user:
-- Trip type: {trip_type}
-- Number of nights: {nights}
-- Travel pace: {pace}
-- User's preferences: {prefs_text}
-- El Born's fit score for this user: {listing_score:.0f}/100 ({listing_label})
-- Dimensions that work well for this user in El Born: {strengths_text}
-- Dimensions that may not suit this user: {frictions_text}
-- El Born's actual scores from real guest reviews: {scores_text}
-
-Your role:
-- Answer questions about El Born specifically — what to do, where to eat, nightlife, safety, transport, hidden gems
-- Create personalised itineraries that match the user's travel style, pace and trip type
-- Ground your answers in the user's actual preferences and the neighbourhood scores above
-- Be honest — if something doesn't suit their profile, say so
-- Keep responses concise, warm, and practical — like a knowledgeable local friend
-- Never make up specific restaurant names, addresses or prices — speak generally about the area
-- If asked about other neighbourhoods, briefly compare them to El Born using the Vibe Check context
-
-Do not answer questions unrelated to Barcelona travel or this neighbourhood."""
-
-        # Display existing chat history
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
-
-        # Suggested questions as quick-start chips
-        if not st.session_state.chat_history:
-            st.markdown("<div style='font-size:0.82rem;color:#717171;margin-bottom:10px;'>Try asking:</div>", unsafe_allow_html=True)
-            suggestions = [
-                f"Plan a {nights}-night itinerary for a {trip_type.lower()} trip",
-                "What are the best tapas bars in El Born?",
-                "Is El Born safe to walk around at night?",
-                "What's the best way to get around from here?",
-            ]
-            cols = st.columns(2)
-            for i, suggestion in enumerate(suggestions):
-                with cols[i % 2]:
-                    if st.button(suggestion, key=f"suggestion_{i}", use_container_width=True):
-                        st.session_state.pending_question = suggestion
-                        st.rerun()
-
-        # Handle suggested question click
-        if "pending_question" in st.session_state:
-            user_input = st.session_state.pending_question
-            del st.session_state.pending_question
-        else:
-            user_input = st.chat_input("Ask about El Born...")
-
-        if user_input:
-            # Add user message to display history
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
-            with st.chat_message("user"):
-                st.markdown(user_input)
-
-            # Call Cohere API
-            with st.chat_message("assistant"):
-                with st.spinner(""):
-                    try:
-                        import cohere
-                        from dotenv import load_dotenv
-                        import os
-                        load_dotenv()
-                        api_key = os.getenv("COHERE_API_KEY") or st.secrets.get("COHERE_API_KEY", "")
-                        co = cohere.ClientV2(api_key)
-
-                        # Build messages list with full history for multi-turn
-                        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-                        for msg in st.session_state.chat_history[:-1]:  # exclude latest user msg
-                            messages.append({"role": msg["role"], "content": msg["content"]})
-                        messages.append({"role": "user", "content": user_input})
-
-                        response = co.chat(
-                            model="command-r-plus",
-                            messages=messages,
-                        )
-                        reply = response.message.content[0].text
-                        st.markdown(reply)
-                        st.session_state.chat_history.append({"role": "assistant", "content": reply})
-
-                    except Exception as e:
-                        error_msg = "Sorry, I couldn't connect right now. Please check your API key and try again."
-                        st.error(error_msg)
-
-        # Clear chat button
-        if st.session_state.chat_history:
-            if st.button("Clear conversation", key="clear_chat"):
-                st.session_state.chat_history = []
-                st.rerun()
