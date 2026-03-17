@@ -807,13 +807,33 @@ with tab_vibecheck:
                 config={"displayModeBar": False},
             )
 
-            # Dimension bars
-            st.markdown("<div style='font-size:0.88rem;font-weight:700;margin:4px 0 14px;'>Score by dimension</div>", unsafe_allow_html=True)
+            # Personalised dimension bars — score weighted by user priority
+            # Shows how much each dimension contributes to YOUR match, not just raw scores
+            st.markdown("<div style='font-size:0.88rem;font-weight:700;margin:4px 0 6px;'>How El Born scores on what matters to you</div>", unsafe_allow_html=True)
+            st.markdown("<div style='font-size:0.8rem;color:#717171;margin-bottom:14px;'>Bar width = neighbourhood score × your priority weight</div>", unsafe_allow_html=True)
             for dim in DIMENSIONS:
-                score = float(listing_row[dim])
-                pref  = user_prefs[dim]
-                lbl   = DIM_LABELS[dim]
-                st.progress(int(score), text=f"{lbl} — {score:.0f}/100 (your priority: {pref}/5)")
+                raw_score   = float(listing_row[dim])
+                pref        = user_prefs[dim]
+                lbl         = DIM_LABELS[dim]
+                # Personalised score = raw score scaled by how much user cares
+                weighted    = round(raw_score * (pref / 5), 1)
+                bar_color   = "#00A699" if weighted >= 65 else ("#FC8C42" if weighted >= 40 else "#BBBBBB")
+                opacity     = 0.4 + (pref / 5) * 0.6  # low priority dims fade out
+                st.markdown(f"""
+                <div style="margin-bottom:10px;opacity:{opacity:.1f};">
+                  <div style="display:flex;justify-content:space-between;
+                              font-size:0.82rem;color:#444;margin-bottom:3px;">
+                    <span><strong>{lbl}</strong>
+                      <span style="color:#999;font-weight:400;"> · priority {pref}/5</span>
+                    </span>
+                    <span style="font-weight:700;color:{bar_color};">{weighted:.0f}/100</span>
+                  </div>
+                  <div style="background:#F0F0F0;border-radius:6px;height:7px;overflow:hidden;">
+                    <div style="width:{weighted}%;height:100%;background:{bar_color};
+                                border-radius:6px;"></div>
+                  </div>
+                </div>
+                """, unsafe_allow_html=True)
 
         with col_map:
             st.markdown("<div style='font-size:0.88rem;font-weight:700;margin-bottom:8px;'>Location</div>", unsafe_allow_html=True)
@@ -890,13 +910,17 @@ Only answer questions related to Barcelona travel, this neighbourhood, or trip p
         USER_AV = "https://ui-avatars.com/api/?name=SA&background=222222&color=ffffff&bold=true&size=32&rounded=true"
         BOT_AV  = "https://ui-avatars.com/api/?name=A&background=FF385C&color=ffffff&bold=true&size=32&rounded=true"
 
-        def call_concierge(question):
-            """Call Cohere and append response to chat history."""
+        def get_cohere_client():
             import cohere, os
             from dotenv import load_dotenv
             load_dotenv()
             api_key = os.getenv("COHERE_API_KEY") or st.secrets.get("COHERE_API_KEY", "")
-            co = cohere.ClientV2(api_key)
+            return cohere.ClientV2(api_key)
+
+        def call_concierge(question):
+            """Call Cohere — used for suggestion buttons."""
+            import os
+            co = get_cohere_client()
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
             for m in st.session_state.chat_history:
                 messages.append({"role": m["role"], "content": m["content"]})
@@ -959,19 +983,71 @@ Only answer questions related to Barcelona travel, this neighbourhood, or trip p
         with btn_col:
             send = st.button("Send", use_container_width=True)
 
-        # Send on button click OR Enter (text_input submits on Enter automatically)
+        # Send on button click OR Enter — use streaming for instant feedback
         if (send or typed) and typed:
-            with st.spinner(""):
-                reply = call_concierge(typed)
             st.session_state.chat_history.append({"role": "user", "content": typed})
-            st.session_state.chat_history.append({"role": "assistant", "content": reply})
-            st.session_state.concierge_counter += 1  # forces new empty input key
+            with st.chat_message("user", avatar=USER_AV):
+                st.markdown(typed)
+            with st.chat_message("assistant", avatar=BOT_AV):
+                try:
+                    co = get_cohere_client()
+                    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+                    for m in st.session_state.chat_history[:-1]:
+                        messages.append({"role": m["role"], "content": m["content"]})
+                    messages.append({"role": "user", "content": typed})
+                    reply_placeholder = st.empty()
+                    reply_placeholder.markdown("_Thinking..._")
+                    full_reply = ""
+                    for event in co.chat_stream(model="command-r-plus-08-2024", messages=messages):
+                        try:
+                            chunk = event.delta.message.content[0].text
+                            if chunk:
+                                full_reply += chunk
+                                reply_placeholder.markdown(full_reply + " ▌")
+                        except (AttributeError, IndexError, TypeError):
+                            pass
+                    if not full_reply:
+                        response = co.chat(model="command-r-plus-08-2024", messages=messages)
+                        full_reply = response.message.content[0].text
+                    reply_placeholder.markdown(full_reply)
+                    st.session_state.chat_history.append({"role": "assistant", "content": full_reply})
+                except Exception as e:
+                    st.error(f"Error: {e}")
+            st.session_state.concierge_counter += 1
             st.rerun()
 
         if st.session_state.chat_history:
-            if st.button("Clear conversation", key="clear_chat"):
-                st.session_state.chat_history = []
-                st.rerun()
+            # Format conversation for export
+            def format_conversation():
+                header = "El Born Concierge - Conversation" + chr(10) + "="*40
+                lines = [header]
+                for msg in st.session_state.chat_history:
+                    role = "You" if msg["role"] == "user" else "Concierge"
+                    lines.append(chr(10) + role + ":" + chr(10) + msg["content"])
+                return chr(10).join(lines)
+
+            conversation_text = format_conversation()
+            btn_col1, btn_col2, btn_col3 = st.columns([2, 2, 2], gap="small")
+            with btn_col1:
+                st.download_button(
+                    "⬇ Download itinerary",
+                    data=conversation_text,
+                    file_name="elborn_itinerary.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+            with btn_col2:
+                st.download_button(
+                    "📤 Share conversation",
+                    data=conversation_text,
+                    file_name="elborn_tips.txt",
+                    mime="text/plain",
+                    use_container_width=True,
+                )
+            with btn_col3:
+                if st.button("✕ Clear", key="clear_chat", use_container_width=True):
+                    st.session_state.chat_history = []
+                    st.rerun()
 
         st.divider()
 
